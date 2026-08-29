@@ -2,135 +2,75 @@
   description = "NixOS configuration for the Open Computing Facility";
 
   inputs = {
-    nixpkgs = {
-      type = "github";
-      owner = "nixos";
-      repo = "nixpkgs";
-      ref = "nixos-26.05";
-    };
-
-    nixpkgs-deprecated = {
-      type = "github";
-      owner = "nixos";
-      repo = "nixpkgs";
-      ref = "nixos-25.11";
-    };
-
-    nixpkgs-unstable = {
-      type = "github";
-      owner = "nixos";
-      repo = "nixpkgs";
-      ref = "nixos-unstable";
-    };
-
-    systems = {
-      type = "github";
-      owner = "nix-systems";
-      repo = "default";
-      ref = "main";
-    };
+    nixpkgs.url = "github:nixos/nixpkgs/nixos-26.05";
+    nixpkgs-deprecated.url = "github:nixos/nixpkgs/nixos-25.11";
+    nixpkgs-unstable.url = "github:nixos/nixpkgs/nixos-unstable";
+    systems.url = "github:nix-systems/default/main";
 
     colmena = {
-      type = "github";
-      owner = "zhaofengli";
-      repo = "colmena";
-      ref = "main";
+      url = "github:zhaofengli/colmena/main";
       inputs.nixpkgs.follows = "nixpkgs";
+      inputs.stable.follows = "nixpkgs";
     };
 
     agenix = {
-      type = "github";
-      owner = "ryantm";
-      repo = "agenix";
-      ref = "main";
+      url = "github:ryantm/agenix/main";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
     agenix-rekey = {
-      type = "github";
-      owner = "oddlama";
-      repo = "agenix-rekey";
-      ref = "main";
+      url = "github:oddlama/agenix-rekey/main";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
     disko = {
-      type = "github";
-      owner = "nix-community";
-      repo = "disko";
-      ref = "latest";
+      url = "github:nix-community/disko/latest";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
     nix-index-database = {
-      type = "github";
-      owner = "nix-community";
-      repo = "nix-index-database";
-      ref = "main";
+      url = "github:nix-community/nix-index-database/main";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
-    ocflib = {
-      type = "github";
-      owner = "ocf";
-      repo = "ocflib";
-      ref = "master";
+    niks3 = {
+      url = "github:Mic92/niks3/main";
+      inputs.nixpkgs.follows = "nixpkgs";
     };
+
+    # -- OCF Inputs -- #
+
+    ocf-sync-etc.url = "github:ocf/etc/master";
+    ocf-pam-trimspaces.url = "github:ocf/pam_trimspaces/master";
 
     ocf-dns = {
       url = "github:ocf/dns";
       flake = false;
     };
 
-    ocf-sync-etc = {
-      type = "github";
-      owner = "ocf";
-      repo = "etc";
-      ref = "master";
-    };
-
-    ocf-pam-trimspaces = {
-      type = "github";
-      owner = "ocf";
-      repo = "pam_trimspaces";
-      ref = "master";
+    ocflib = {
+      url = "github:ocf/ocflib/master";
+      inputs.nixpkgs.follows = "nixpkgs";
     };
 
     ocf-utils = {
-      type = "github";
-      owner = "ocf";
-      repo = "utils";
-      ref = "master";
+      url = "github:ocf/utils/master";
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.ocflib.follows = "ocflib";
     };
 
     wayout = {
-      type = "github";
-      owner = "ocf";
-      repo = "wayout";
-      ref = "main";
+      url = "github:ocf/wayout/main";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
     ocf-cosmic-applets = {
-      type = "github";
-      owner = "ocf";
-      repo = "cosmic-applets";
-      ref = "main";
+      url = "github:ocf/cosmic-applets/main";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
     ocf-jukebox = {
       url = "github:ocf/jukebox-django";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
-
-    niks3 = {
-      type = "github";
-      owner = "Mic92";
-      repo = "niks3";
-      ref = "main";
       inputs.nixpkgs.follows = "nixpkgs";
     };
   };
@@ -206,6 +146,8 @@
               "zoom"
               "drawio"
               "datagrip"
+              "idea"
+              "pycharm"
               "davinci-resolve"
               "1password"
               "1password-cli"
@@ -268,12 +210,21 @@
 
       readGroup =
         group:
+        let
+          groupDir = builtins.readDir ./hosts/${group};
+          # exclude files directories in hosts/group/* that end with .disabled
+          activeHosts = nixpkgs.lib.filterAttrs (
+            name: value: !(nixpkgs.lib.hasSuffix ".disabled" name)
+          ) groupDir;
+        in
         nixpkgs.lib.mapAttrs' (host: _: {
-          # host config can be in the form of hostname.nix or
-          # hostname/default.nix
+          # host config in hosts/group/* can be in the form of hostname.nix or
+          # hostname (directory containing default.nix)
+          # FIXME: colmenaHosts expects a .nix file so this doesnt actually
+          # work even though readGroup technically supports it
           name = nixpkgs.lib.removeSuffix ".nix" host;
           value = group;
-        }) (builtins.readDir ./hosts/${group});
+        }) activeHosts;
 
       hosts = nixpkgs.lib.concatMapAttrs (group: _: readGroup group) (builtins.readDir ./hosts);
 

@@ -48,7 +48,7 @@ let
 in
 {
   options.ocf.gui = {
-    enable = lib.mkEnableOption "Enable desktop environment configuration";
+    enable = lib.mkEnableOption "desktop environment configuration";
 
     # FIXME: this doesnt check if the given value is a valid session
     desktop = lib.mkOption {
@@ -140,6 +140,7 @@ in
       # misc wayland utils
       wl-clipboard
       libnotify
+      waypipe
 
       ocf-tv
 
