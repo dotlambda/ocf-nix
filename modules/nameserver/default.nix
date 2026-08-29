@@ -33,14 +33,26 @@ in
   };
 
   config = lib.mkIf cfg.enable {
+    networking.firewall = {
+      allowedTCPPorts = [ 53 ];
+      allowedUDPPorts = [ 53 ];
+    };
+
     services.bind = {
       enable = true;
-      # TODO this should actually be https://github.com/ocf/puppet/blob/master/modules/ocf_ns/templates/named.conf.options.erb
-      configFile = "/srv/dns/etc/named.conf.local";
+      configFile = pkgs.writeText "named.conf" ''
+        include "/srv/dns/named.conf.options";
+        include "/srv/dns/named.conf.local";
+      '';
     };
 
     systemd.services.rebuild-dns-from-ldap = {
       after = [ "network-online.target" ];
+      # TODO replace with EnvironmentFile that is obtained from agenix
+      environment = {
+        DECAL_DDNS_KEY = "foo";
+        LETSENCRYPYT_DDNS_KEY = "bar";
+      };
       path = [
         build-zones
         pkgs.bind
@@ -51,6 +63,8 @@ in
         sed -i /auto-dnssec/d etc/named.conf.local  # removed in bind 9.19.16
         build-zones
         check-zones
+        # from https://github.com/ocf/puppet/blob/master/modules/ocf_ns/templates/named.conf.options.erb
+        ${lib.getExe pkgs.envsubst} < ${./named.conf.options} > etc/named.conf.options
         cp -r etc /run/dns/
       '';
       serviceConfig = {
