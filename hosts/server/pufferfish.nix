@@ -1,9 +1,11 @@
+{ lib, ... }:
+
 {
   imports = [ ../../hardware/virtualized.nix ];
 
   ocf.network = {
     enable = true;
-    lastOctet = 184;
+    lastOctet = 110;
   };
 
   disko.devices = {
