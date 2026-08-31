@@ -41,8 +41,8 @@ in
     services.bind = {
       enable = true;
       configFile = pkgs.writeText "named.conf" ''
-        include "/srv/dns/named.conf.options";
-        include "/srv/dns/named.conf.local";
+        include "/srv/dns/etc/named.conf.options";
+        include "/srv/dns/etc/named.conf.local";
       '';
     };
 
