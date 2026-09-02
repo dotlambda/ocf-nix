@@ -1,0 +1,25 @@
+{
+  pkgs,
+  lib,
+  config,
+  ...
+}:
+
+{
+  imports = [ ../../hardware/virtualized.nix ];
+
+  # Empty Host, will put something here soon
+  ocf.network = {
+    enable = true;
+    lastOctet = 44;
+  };
+
+  ocf.motd = {
+    enable = true;
+    description = "Unifi console.";
+  };
+
+  services.unifi.enable = false;
+
+  system.stateVersion = "24.11";
+}

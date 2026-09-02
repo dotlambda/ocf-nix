@@ -1,10 +1,16 @@
-{ pkgs, lib, inputs, config, ... }:
+{
+  self,
+  pkgs,
+  lib,
+  inputs,
+  config,
+  ...
+}:
 
 let
   secretsDir = inputs.self + "/secrets";
   hostKeyFile = secretsDir + "/host-keys/${config.networking.hostName}.pub";
 in
-
 {
   nix = {
     channel.enable = false;
@@ -12,10 +18,29 @@ in
     settings = {
       experimental-features = "nix-command flakes";
       nix-path = lib.mapAttrsToList (name: _: "${name}=flake:${name}") inputs;
+      builders-use-substitutes = true;
     };
     gc = {
       automatic = true;
       dates = "weekly";
+      # we do not want all of our computers to suddenly have cpu/io spikes at the same time
+      randomizedDelaySec = "45min";
+    };
+    optimise = {
+      automatic = true;
+      dates = "daily";
+      # we do not want all of our computers to suddenly have cpu/io spikes at the same time
+      randomizedDelaySec = "45min";
+    };
+    settings = {
+      substituters = [
+        "https://devenv.cachix.org" # makes devenv shells build significantly faster
+        "https://cache.ocf.berkeley.edu"
+      ];
+      trusted-public-keys = [
+        "devenv.cachix.org-1:w1cLUi8dv3hnoSPGAuibQv+f9TZLr6cv/Hm9XgU50cw="
+        "cache.ocf.berkeley.edu-1:6n9lihkjExzagz8GYR1QY/ZthT/XAKOy+ju5Jxd6wBg="
+      ];
     };
   };
 
@@ -25,7 +50,46 @@ in
     auth.enable = lib.mkDefault true;
     managed-deployment.enable = lib.mkDefault true;
     acme.enable = lib.mkDefault true;
-    shell.enable = lib.mkDefault true;
+    cli.enable = lib.mkDefault true;
+    motd.enable = lib.mkDefault true;
+    etc.enable = true;
+    releaseMetadata.enable = true;
+
+    # the case against globally nfs mounted /home:
+    # - you can scp between hosts
+    # - global /home (and global user config as a result) introduces a huge
+    #   dependency on the nfs server for being able to login anywhere (logins
+    #   would hang if nfs was down).
+    # - global /home means that we are trusting every host (and every program
+    #   running as any user on any host) not to write malicious files/config
+    #   on the shared home directory which then instantly propagates to every
+    #   other host at the ocf (catastrophic).
+    #
+    # this is a middle ground that provides convenient access to the global
+    # home directories:
+    # - nfs server is configured with root_squash and only allows acting as a
+    #   user other than nobody if a valid kerberos ticket is available.
+    # - similar to the desktops, global homes are mounted at /remote and
+    #   /services by default on every host.
+    # - unlike desktops, these global homes are not looked at for
+    #   configuration or a bind mount at ~/remote.
+    # - nfs client should not expect a ticket to be available, as the user may
+    #   not have logged with GSSAPI authenticated ssh; thus the nfs client
+    #   should not touch /remote or /services at all without the user manually
+    #   doing so with a ticket.
+    # - softerr is used to prevent infinite hangs on IO operations to /remote
+    #   and /services in the case that the nfs server is down.
+    nfs = {
+      enable = lib.mkDefault true;
+      mount = lib.mkDefault true;
+      kerberos = lib.mkDefault true;
+      softerr = lib.mkDefault true;
+
+      # instead of having an nfs mount for each logged in user, we mount a
+      # single nfs mount at /remote and if ocf.home.mountRemote is true, bind
+      # mount ~/remote -> /remote/w/wa/waddles (for username waddles)
+      asRemote = lib.mkDefault true;
+    };
   };
 
   age.rekey = {
@@ -34,6 +98,16 @@ in
     localStorageDir = inputs.self + "/secrets/rekeyed/${config.networking.hostName}";
     hostPubkey = lib.mkIf (builtins.pathExists hostKeyFile) (builtins.readFile hostKeyFile);
   };
+
+  # Mitigate Dirty Frag (universal Linux LPE via esp4/esp6/rxrpc page-cache write)
+  # https://github.com/V4bel/dirtyfrag
+  boot.extraModprobeConfig = ''
+    install esp4 /bin/false
+    install esp6 /bin/false
+    install rxrpc /bin/false
+  '';
+
+  boot.tmp.useTmpfs = true;
 
   boot.loader = {
     systemd-boot = {
@@ -76,6 +150,9 @@ in
     '';
   };
 
+  environment.variables.EDITOR = "${pkgs.vim}/bin/ex"; # line editor
+  environment.variables.VISUAL = "${pkgs.nano}/bin/nano"; # visual editor
+
   environment.systemPackages = with pkgs; [
     # System utilities
     dnsutils
@@ -88,28 +165,94 @@ in
     ipmitool
     smartmontools
     nvme-cli
+    perf
+    strace
+    bsd-finger # necessary for checkacct util to work
 
     # Networking tools
     rsync
     wget
     curl
+    mtr
+    traceroute
+    iperf
+    iperf3
+    vnstat
+    nethogs
+    netcat-openbsd
+    nmap
+    iftop
+    tcpdump
+    whois
 
     # Other useful stuff
     tmux
+    screen
+    dtach
+    reptyr
     htop
-    file
-    vim
+    btop
     git
     killall
+    inetutils
     ldapvi
     openldap
+    lsof
+    jq
+    pv
+    pwgen
+    tree
+    unzip
+    moreutils
+    pigz
+    ranger
+    ncdu
+    beep
+    gist
+
+    # System administration
+    iotop
+    parted
+    powertop
+    cryptsetup
+    quota
+
+    # files
+    dua
+    lf
+    file
+    micro
+    ripgrep
+    hexedit
+    dos2unix
+    bat
+    lsd
+    emacs
+
+    # Default openssh doesn't include GSSAPI support, so we need to override sshfs
+    # to use the openssh_gssapi package instead.
+    (sshfs.override {
+      openssh = pkgs.openssh_gssapi;
+    })
 
     comma-with-db
-    
+
     # OCF utilities
-    (python312.withPackages (ps: [ ps.ocflib ]))
+    (config.ocf.python.package.withPackages (
+      ps: with ps; [
+        ocflib
+        dnspython
+        paramiko
+        requests
+        tabulate
+        virtualenv
+      ]
+    ))
     ocf-utils
+    ocf-niks3-push
   ];
+
+  programs.vim.enable = true;
 
   services = {
     openssh = {
@@ -133,6 +276,8 @@ in
         ln -s ${lib.getExe pkgs.zsh} $out/zsh
         ln -s ${lib.getExe pkgs.fish} $out/fish
         ln -s ${lib.getExe pkgs.xonsh} $out/xonsh
+        ln -s ${lib.getExe pkgs.tcsh} $out/tcsh
+        ln -s ${lib.getExe pkgs.tcsh} $out/csh
       '';
     };
 
@@ -143,20 +288,21 @@ in
   security.rtkit.enable = true;
   services.pulseaudio.enable = false;
 
-  networking.firewall.enable = false;
+  networking.firewall.enable = true;
 
   environment.etc = {
     papersize.text = "letter";
-    "cups/lpoptions".text = "Default double";
+    "nixos/configuration.nix".text = ''
+      {}: builtins.abort "This machine is not managed by /etc/nixos. Please use configs at ocf.io/gh/nix with Colmena."
+    '';
+  }
+  // lib.optionalAttrs (!config.ocf.printhost.enable) {
+    "cups/lpoptions".text = "Default OCF-BW";
     "cups/client.conf".text = ''
       ServerName printhost.ocf.berkeley.edu
       Encryption Always
     '';
   };
-
-  environment.etc."nixos/configuration.nix".text = ''
-    {}: builtins.abort "This machine is not managed by /etc/nixos. Please use colmena instead."
-  '';
 
   systemd.services.nix-remove-profiles = {
     description = "Remove old NixOS generations but leave store cleanup to nix.gc";
@@ -185,4 +331,8 @@ in
       Persistent = true;
     };
   };
+
+  # CVE-2026-31431
+  # remove after kernel is updated to a fixed release
+  boot.blacklistedKernelModules = [ "algif_aead" ];
 }
